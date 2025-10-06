@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { PlusCircle, Edit2, Trash2, History, Briefcase, RefreshCw, ChevronUp, ChevronDown } from 'lucide-react';
+import { PlusCircle, Plus, Edit2, Trash2, History, Briefcase, RefreshCw, ChevronUp, ChevronDown } from 'lucide-react';
 
 const PortfolioTracker = () => {
   // Função para carregar dados do localStorage
@@ -56,7 +56,7 @@ const PortfolioTracker = () => {
   const [purchasePrice, setPurchasePrice] = useState('');
   const [editPrice, setEditPrice] = useState('');
   const [purchaseType, setPurchaseType] = useState('minha'); // 'minha' ou 'professor'
-  const [activeTab, setActiveTab] = useState('portfolio'); // 'portfolio' ou 'history'
+  const [activeTab, setActiveTab] = useState('portfolio'); // 'portfolio', 'history' ou 'dashboard'
   const [newAsset, setNewAsset] = useState({
     type: 'Ações',
     ticker: '',
@@ -71,6 +71,23 @@ const PortfolioTracker = () => {
   const [editCurrentPrice, setEditCurrentPrice] = useState('');
   const [sortConfig, setSortConfig] = useState({ key: null, direction: 'asc' });
 
+  // Estados para a nova aba de proporção
+  const [proportionAssets, setProportionAssets] = useState(() => 
+    loadFromStorage('proportion-assets', [
+      { id: 1, ticker: '', qtyProfessor: 0, unitPrice: 0 }
+    ])
+  );
+  const [availableAmount, setAvailableAmount] = useState(() => 
+    loadFromStorage('available-amount', 0)
+  );
+  const [roundingMethod, setRoundingMethod] = useState(() => 
+    loadFromStorage('rounding-method', 'normal')
+  );
+  
+  // Estados para paginação do histórico
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 10;
+
   // useEffect para salvar automaticamente no localStorage
   useEffect(() => {
     saveToStorage('portfolio-assets', assets);
@@ -79,6 +96,19 @@ const PortfolioTracker = () => {
   useEffect(() => {
     saveToStorage('portfolio-transactions', transactions);
   }, [transactions]);
+
+  // useEffect para salvar dados da aba proporção
+  useEffect(() => {
+    saveToStorage('proportion-assets', proportionAssets);
+  }, [proportionAssets]);
+
+  useEffect(() => {
+    saveToStorage('available-amount', availableAmount);
+  }, [availableAmount]);
+
+  useEffect(() => {
+    saveToStorage('rounding-method', roundingMethod);
+  }, [roundingMethod]);
 
   // Base de dados local com principais ativos brasileiros
   const stockDatabase = {
@@ -645,6 +675,254 @@ const PortfolioTracker = () => {
     </th>
   );
 
+  // Funções para calcular métricas do dashboard
+  const calculatePortfolioMetrics = () => {
+    // Verificar se assets existe e é um array
+    if (!assets || !Array.isArray(assets)) {
+      return {
+        my: {
+          totalInvested: 0,
+          currentValue: 0,
+          totalProfit: 0,
+          profitPercentage: 0,
+          acoesValue: 0,
+          fiisValue: 0,
+          acoesPercentage: 0,
+          fiisPercentage: 0,
+          topAssets: [],
+          assetsCount: 0
+        },
+        teacher: {
+          totalInvested: 0,
+          currentValue: 0,
+          totalProfit: 0,
+          profitPercentage: 0,
+          acoesValue: 0,
+          fiisValue: 0,
+          acoesPercentage: 0,
+          fiisPercentage: 0,
+          topAssets: [],
+          assetsCount: 0
+        }
+      };
+    }
+    
+    const myAssets = assets.filter(asset => asset && asset.currentQty > 0);
+    const teacherAssets = assets.filter(asset => asset && asset.teacherQty > 0);
+    
+    // Métricas da minha carteira
+    const myTotalInvested = myAssets.reduce((total, asset) => {
+      if (!asset || typeof asset.currentQty !== 'number' || typeof asset.myAvgPrice !== 'number') return total;
+      return total + (asset.currentQty * asset.myAvgPrice);
+    }, 0);
+    
+    const myCurrentValue = myAssets.reduce((total, asset) => {
+      if (!asset || typeof asset.currentQty !== 'number' || typeof asset.currentPrice !== 'number') return total;
+      return total + (asset.currentQty * asset.currentPrice);
+    }, 0);
+    
+    const myTotalProfit = myCurrentValue - myTotalInvested;
+    const myProfitPercentage = myTotalInvested > 0 ? (myTotalProfit / myTotalInvested) * 100 : 0;
+    
+    // Métricas da carteira do professor
+    const teacherTotalInvested = teacherAssets.reduce((total, asset) => {
+      if (!asset || typeof asset.teacherQty !== 'number' || typeof asset.teacherPrice !== 'number') return total;
+      return total + (asset.teacherQty * asset.teacherPrice);
+    }, 0);
+    
+    const teacherCurrentValue = teacherAssets.reduce((total, asset) => {
+      if (!asset || typeof asset.teacherQty !== 'number' || typeof asset.currentPrice !== 'number') return total;
+      return total + (asset.teacherQty * asset.currentPrice);
+    }, 0);
+    
+    const teacherTotalProfit = teacherCurrentValue - teacherTotalInvested;
+    const teacherProfitPercentage = teacherTotalInvested > 0 ? (teacherTotalProfit / teacherTotalInvested) * 100 : 0;
+    
+    // Distribuição por tipo (Ações vs FIIs)
+    const myAcoes = myAssets.filter(asset => asset && asset.type === 'Ações');
+    const myFiis = myAssets.filter(asset => asset && asset.type === 'FIIs');
+    const teacherAcoes = teacherAssets.filter(asset => asset && asset.type === 'Ações');
+    const teacherFiis = teacherAssets.filter(asset => asset && asset.type === 'FIIs');
+    
+    const myAcoesValue = myAcoes.reduce((total, asset) => {
+      if (!asset || typeof asset.currentQty !== 'number' || typeof asset.currentPrice !== 'number') return total;
+      return total + (asset.currentQty * asset.currentPrice);
+    }, 0);
+    
+    const myFiisValue = myFiis.reduce((total, asset) => {
+      if (!asset || typeof asset.currentQty !== 'number' || typeof asset.currentPrice !== 'number') return total;
+      return total + (asset.currentQty * asset.currentPrice);
+    }, 0);
+    
+    const teacherAcoesValue = teacherAcoes.reduce((total, asset) => {
+      if (!asset || typeof asset.teacherQty !== 'number' || typeof asset.currentPrice !== 'number') return total;
+      return total + (asset.teacherQty * asset.currentPrice);
+    }, 0);
+    
+    const teacherFiisValue = teacherFiis.reduce((total, asset) => {
+      if (!asset || typeof asset.teacherQty !== 'number' || typeof asset.currentPrice !== 'number') return total;
+      return total + (asset.teacherQty * asset.currentPrice);
+    }, 0);
+    
+    // Percentuais de alocação
+    const myAcoesPercentage = myCurrentValue > 0 ? (myAcoesValue / myCurrentValue) * 100 : 0;
+    const myFiisPercentage = myCurrentValue > 0 ? (myFiisValue / myCurrentValue) * 100 : 0;
+    const teacherAcoesPercentage = teacherCurrentValue > 0 ? (teacherAcoesValue / teacherCurrentValue) * 100 : 0;
+    const teacherFiisPercentage = teacherCurrentValue > 0 ? (teacherFiisValue / teacherCurrentValue) * 100 : 0;
+    
+    // Top 5 posições por valor
+    const myTopAssets = myAssets
+      .filter(asset => asset && asset.ticker && typeof asset.currentQty === 'number' && typeof asset.currentPrice === 'number')
+      .map(asset => ({
+        ...asset,
+        totalValue: asset.currentQty * asset.currentPrice,
+        percentage: myCurrentValue > 0 ? ((asset.currentQty * asset.currentPrice) / myCurrentValue) * 100 : 0
+      }))
+      .sort((a, b) => b.totalValue - a.totalValue)
+      .slice(0, 5);
+      
+    const teacherTopAssets = teacherAssets
+      .filter(asset => asset && asset.ticker && typeof asset.teacherQty === 'number' && typeof asset.currentPrice === 'number')
+      .map(asset => ({
+        ...asset,
+        totalValue: asset.teacherQty * asset.currentPrice,
+        percentage: teacherCurrentValue > 0 ? ((asset.teacherQty * asset.currentPrice) / teacherCurrentValue) * 100 : 0
+      }))
+      .sort((a, b) => b.totalValue - a.totalValue)
+      .slice(0, 5);
+    
+    return {
+      my: {
+        totalInvested: myTotalInvested,
+        currentValue: myCurrentValue,
+        totalProfit: myTotalProfit,
+        profitPercentage: myProfitPercentage,
+        acoesValue: myAcoesValue,
+        fiisValue: myFiisValue,
+        acoesPercentage: myAcoesPercentage,
+        fiisPercentage: myFiisPercentage,
+        topAssets: myTopAssets,
+        assetsCount: myAssets.length
+      },
+      teacher: {
+        totalInvested: teacherTotalInvested,
+        currentValue: teacherCurrentValue,
+        totalProfit: teacherTotalProfit,
+        profitPercentage: teacherProfitPercentage,
+        acoesValue: teacherAcoesValue,
+        fiisValue: teacherFiisValue,
+        acoesPercentage: teacherAcoesPercentage,
+        fiisPercentage: teacherFiisPercentage,
+        topAssets: teacherTopAssets,
+        assetsCount: teacherAssets.length
+      }
+    };
+  };
+
+  // Funções para a aba de proporção
+  const addProportionAsset = () => {
+    const newId = Math.max(...proportionAssets.map(a => a.id), 0) + 1;
+    setProportionAssets([...proportionAssets, {
+      id: newId,
+      ticker: '',
+      qtyProfessor: 0,
+      unitPrice: 0
+    }]);
+  };
+
+  const removeProportionAsset = (id) => {
+    if (proportionAssets.length > 1) {
+      setProportionAssets(proportionAssets.filter(asset => asset.id !== id));
+    }
+  };
+
+  const updateProportionAsset = (id, field, value) => {
+    setProportionAssets(proportionAssets.map(asset => 
+      asset.id === id ? { ...asset, [field]: value } : asset
+    ));
+  };
+
+  const calculateProportions = () => {
+    // Calcular total investido pelo professor
+    const totalProfessor = proportionAssets.reduce((sum, asset) => 
+      sum + (asset.qtyProfessor * asset.unitPrice), 0
+    );
+
+    if (totalProfessor === 0 || availableAmount === 0) return [];
+
+    // Calcular fator de proporção
+    const factor = availableAmount / totalProfessor;
+
+    // Aplicar fator em cada ativo
+    return proportionAssets.map(asset => {
+      const professorValue = asset.qtyProfessor * asset.unitPrice;
+      let userQty = asset.qtyProfessor * factor;
+
+      // Aplicar método de arredondamento
+      switch (roundingMethod) {
+        case 'up':
+          userQty = Math.ceil(userQty);
+          break;
+        case 'down':
+          userQty = Math.floor(userQty);
+          break;
+        default:
+          userQty = Math.round(userQty);
+      }
+
+      const userValue = userQty * asset.unitPrice;
+
+      return {
+        ...asset,
+        professorValue,
+        userQty,
+        userValue,
+        factor
+      };
+    });
+  };
+
+  const proportionResults = calculateProportions();
+  const totalProfessorInvestment = proportionAssets.reduce((sum, asset) => 
+    sum + (asset.qtyProfessor * asset.unitPrice), 0
+  );
+  const totalUserInvestment = proportionResults.reduce((sum, result) => 
+    sum + result.userValue, 0
+  );
+  const proportionFactor = totalProfessorInvestment > 0 ? availableAmount / totalProfessorInvestment : 0;
+
+  // Funções para paginação do histórico
+  const totalPages = Math.ceil(transactions.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const currentTransactions = transactions.slice(startIndex, endIndex);
+
+  const goToPage = (page) => {
+    setCurrentPage(page);
+  };
+
+  const goToPreviousPage = () => {
+    if (currentPage > 1) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
+  const goToNextPage = () => {
+    if (currentPage < totalPages) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  // Reset página quando mudar para aba histórico
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    if (tab === 'history') {
+      setCurrentPage(1);
+    }
+  };
+
+  const metrics = calculatePortfolioMetrics();
+
   const acoes = getSortedAssets(assets.filter(a => a.type === 'Ações'));
   const fiis = getSortedAssets(assets.filter(a => a.type === 'FIIs'));
 
@@ -665,17 +943,17 @@ const PortfolioTracker = () => {
         <td className="px-4 py-3 text-sm text-center">
           <span className={remaining > 0 ? 'text-orange-600 font-semibold' : 'text-green-600 font-semibold'}>{remaining}</span>
         </td>
-        <td className="px-4 py-3 text-sm text-right">
-          <div className="flex items-center justify-end gap-2">
+        <td className="px-4 py-3 text-sm text-right min-w-[100px]">
+          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
             R$ {asset.currentPrice.toFixed(2)}
             <button onClick={() => openEditCurrentPrice(asset)} className="text-green-600 hover:text-green-800" title="Editar cotação atual">
               <Edit2 size={14} />
             </button>
           </div>
         </td>
-        <td className="px-4 py-3 text-sm text-right">{asset.teacherPrice > 0 ? `R$ ${asset.teacherPrice.toFixed(2)}` : '-'}</td>
-        <td className="px-4 py-3 text-sm text-right">
-          <div className="flex items-center justify-end gap-2">
+        <td className="px-4 py-3 text-sm text-right min-w-[100px] whitespace-nowrap">{asset.teacherPrice > 0 ? `R$ ${asset.teacherPrice.toFixed(2)}` : '-'}</td>
+        <td className="px-4 py-3 text-sm text-right min-w-[100px]">
+          <div className="flex items-center justify-end gap-2 whitespace-nowrap">
             {asset.myAvgPrice > 0 ? `R$ ${asset.myAvgPrice.toFixed(2)}` : '-'}
             <button onClick={() => openEditModal(asset)} className="text-blue-600 hover:text-blue-800" title="Editar meu preço">
               <Edit2 size={14} />
@@ -717,8 +995,8 @@ const PortfolioTracker = () => {
           <div className="flex items-center gap-4">
             <div className="flex bg-gray-100 rounded-lg p-1">
               <button 
-                onClick={() => setActiveTab('portfolio')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-colors ${
+                onClick={() => handleTabChange('portfolio')}
+                className={`flex flex-col items-center gap-1 px-4 py-2 rounded-md font-medium transition-colors ${
                   activeTab === 'portfolio' 
                     ? 'bg-white text-blue-600 shadow-sm' 
                     : 'text-gray-600 hover:text-gray-900'
@@ -728,8 +1006,8 @@ const PortfolioTracker = () => {
                 Portfolio
               </button>
               <button 
-                onClick={() => setActiveTab('history')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-md font-medium transition-colors ${
+                onClick={() => handleTabChange('history')}
+                className={`flex flex-col items-center gap-1 px-4 py-2 rounded-md font-medium transition-colors ${
                   activeTab === 'history' 
                     ? 'bg-white text-blue-600 shadow-sm' 
                     : 'text-gray-600 hover:text-gray-900'
@@ -737,6 +1015,26 @@ const PortfolioTracker = () => {
               >
                 <History size={18} />
                 Histórico ({transactions.length})
+              </button>
+              <button
+                onClick={() => handleTabChange('dashboard')}
+                className={`flex flex-col items-center gap-1 px-4 py-2 rounded-md font-medium transition-colors ${
+                  activeTab === 'dashboard' 
+                    ? 'bg-white text-blue-600 shadow-sm' 
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                📊 Dashboard
+              </button>
+              <button
+                onClick={() => handleTabChange('proportion')}
+                className={`flex flex-col items-center gap-1 px-4 py-2 rounded-md font-medium transition-colors ${
+                  activeTab === 'proportion' 
+                    ? 'bg-white text-blue-600 shadow-sm' 
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                🎯 Proporção
               </button>
             </div>
             <div className="flex gap-3">
@@ -756,9 +1054,9 @@ const PortfolioTracker = () => {
           </div>
         </div>
 
-        {activeTab === 'portfolio' ? (
-          <>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        {activeTab === 'portfolio' && (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="bg-gradient-to-br from-blue-50 to-blue-100 p-6 rounded-lg shadow-lg border-2 border-blue-300">
                 <h3 className="text-lg font-bold text-blue-900 mb-4 flex items-center gap-2">💼 Meu Desempenho</h3>
                 <div className="grid grid-cols-2 gap-4">
@@ -850,9 +1148,9 @@ const PortfolioTracker = () => {
                       <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Qtd Atual</th>
                       <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Qtd Prof.</th>
                       <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Falta</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase">Cotação</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase">Preço Prof.</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase">Meu Preço</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase min-w-[100px]">Cotação</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase min-w-[100px]">Preço Prof.</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase min-w-[100px]">Meu Preço</th>
                       <SortableHeader column="myProfitLoss" className="text-right">% Lucro</SortableHeader>
                       <SortableHeader column="teacherProfitLoss" className="text-right">% Lucro (Prof.)</SortableHeader>
                       <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Progresso</th>
@@ -879,9 +1177,9 @@ const PortfolioTracker = () => {
                       <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Qtd Atual</th>
                       <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Qtd Prof.</th>
                       <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Falta</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase">Cotação</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase">Preço Prof.</th>
-                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase">Meu Preço</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase min-w-[100px]">Cotação</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase min-w-[100px]">Preço Prof.</th>
+                      <th className="px-4 py-3 text-right text-xs font-semibold text-gray-700 uppercase min-w-[100px]">Meu Preço</th>
                       <SortableHeader column="myProfitLoss" className="text-right">% Lucro</SortableHeader>
                       <SortableHeader column="teacherProfitLoss" className="text-right">% Lucro (Prof.)</SortableHeader>
                       <th className="px-4 py-3 text-center text-xs font-semibold text-gray-700 uppercase">Progresso</th>
@@ -894,10 +1192,13 @@ const PortfolioTracker = () => {
                 </table>
               </div>
             </div>
-          </>
-        ) : (
-          <div className="bg-white rounded-lg shadow">
-            <div className="bg-gray-800 text-white px-6 py-4 rounded-t-lg">
+          </div>
+        )}
+        
+        {activeTab === 'history' && (
+          <div className="space-y-6">
+            <div className="bg-white rounded-lg shadow">
+              <div className="bg-gray-800 text-white px-6 py-4 rounded-t-lg">
               <h2 className="text-xl font-bold flex items-center gap-2">
                 <History size={20} />
                 Histórico de Transações
@@ -911,7 +1212,8 @@ const PortfolioTracker = () => {
                   <p className="text-gray-400 text-sm">As compras que você registrar aparecerão aqui</p>
                 </div>
               ) : (
-                <div className="overflow-x-auto">
+                <>
+                  <div className="overflow-x-auto">
                   <table className="w-full">
                     <thead className="bg-gray-50">
                       <tr>
@@ -925,7 +1227,7 @@ const PortfolioTracker = () => {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200">
-                      {transactions.map(transaction => (
+                      {currentTransactions.map(transaction => (
                         <tr key={transaction.id} className="hover:bg-gray-50">
                           <td className="px-4 py-3 text-sm text-gray-900">{transaction.date}</td>
                           <td className="px-4 py-3 text-sm">
@@ -970,7 +1272,363 @@ const PortfolioTracker = () => {
                     </tbody>
                   </table>
                 </div>
-              )}
+                
+                {/* Controles de Paginação */}
+                {transactions.length > itemsPerPage && (
+                  <div className="mt-6 flex items-center justify-between">
+                    <div className="text-sm text-gray-700">
+                      Mostrando {startIndex + 1} a {Math.min(endIndex, transactions.length)} de {transactions.length} transações
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={goToPreviousPage}
+                        disabled={currentPage === 1}
+                        className="px-3 py-2 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Anterior
+                      </button>
+                      
+                      <div className="flex gap-1">
+                        {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
+                          <button
+                            key={page}
+                            onClick={() => goToPage(page)}
+                            className={`px-3 py-2 text-sm rounded-md ${
+                              currentPage === page
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-white border border-gray-300 hover:bg-gray-50'
+                            }`}
+                          >
+                            {page}
+                          </button>
+                        ))}
+                      </div>
+                      
+                      <button
+                        onClick={goToNextPage}
+                        disabled={currentPage === totalPages}
+                        className="px-3 py-2 text-sm bg-white border border-gray-300 rounded-md hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Próxima
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+            </div>
+            </div>
+          </div>
+        )}
+        
+        {activeTab === 'dashboard' && (
+          <div className="space-y-6">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Dashboard de Análise</h2>
+              <p className="text-gray-600">Compare o desempenho da sua carteira com a carteira do professor</p>
+            </div>
+
+            {/* Comparação de Performance */}
+            <div className="bg-white rounded-lg p-6 border border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 text-center">Comparação de Performance</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="text-center">
+                  <div className={`text-2xl font-bold ${metrics.my.profitPercentage >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                    {metrics.my.profitPercentage.toFixed(2)}%
+                  </div>
+                  <div className="text-sm text-gray-600">Minha Performance</div>
+                </div>
+                <div className="text-center">
+                  <div className={`text-2xl font-bold ${
+                    metrics.my.profitPercentage >= metrics.teacher.profitPercentage ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {metrics.my.profitPercentage >= metrics.teacher.profitPercentage ? '+' : ''}
+                    {(metrics.my.profitPercentage - metrics.teacher.profitPercentage).toFixed(2)}%
+                  </div>
+                  <div className="text-sm text-gray-600">Diferença</div>
+                </div>
+                <div className="text-center">
+                  <div className={`text-2xl font-bold ${metrics.teacher.profitPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {metrics.teacher.profitPercentage.toFixed(2)}%
+                  </div>
+                  <div className="text-sm text-gray-600">Performance Professor</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Resumo Geral */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Minha Carteira */}
+              <div className="bg-blue-50 rounded-lg p-6 border border-blue-200">
+                <h3 className="text-lg font-semibold text-blue-900 mb-4">Minha Carteira</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Valor Investido:</span>
+                    <span className="font-semibold">R$ {metrics.my.totalInvested.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Valor Atual:</span>
+                    <span className="font-semibold">R$ {metrics.my.currentValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Lucro/Prejuízo:</span>
+                    <span className={`font-semibold ${metrics.my.totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      R$ {metrics.my.totalProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Rentabilidade:</span>
+                    <span className={`font-semibold ${metrics.my.profitPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {metrics.my.profitPercentage.toFixed(2)}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Ativos:</span>
+                    <span className="font-semibold">{metrics.my.assetsCount}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Carteira do Professor */}
+              <div className="bg-green-50 rounded-lg p-6 border border-green-200">
+                <h3 className="text-lg font-semibold text-green-900 mb-4">Carteira do Professor</h3>
+                <div className="space-y-3">
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Valor Investido:</span>
+                    <span className="font-semibold">R$ {metrics.teacher.totalInvested.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Valor Atual:</span>
+                    <span className="font-semibold">R$ {metrics.teacher.currentValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Lucro/Prejuízo:</span>
+                    <span className={`font-semibold ${metrics.teacher.totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      R$ {metrics.teacher.totalProfit.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Rentabilidade:</span>
+                    <span className={`font-semibold ${metrics.teacher.profitPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                      {metrics.teacher.profitPercentage.toFixed(2)}%
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-600">Ativos:</span>
+                    <span className="font-semibold">{metrics.teacher.assetsCount}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Gráficos de Comparação */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Comparação de Performance Visual */}
+              <div className="bg-white rounded-lg p-6 border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">📊 Performance Visual</h3>
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-blue-600 font-medium">Minha Carteira</span>
+                      <span className={`font-bold ${metrics.my.profitPercentage >= 0 ? 'text-blue-600' : 'text-red-600'}`}>{metrics.my.profitPercentage.toFixed(2)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-4">
+                      <div 
+                        className={`h-4 rounded-full ${metrics.my.profitPercentage >= 0 ? 'bg-blue-600' : 'bg-red-500'}`}
+                        style={{ 
+                          width: `${Math.min(Math.abs(metrics.my.profitPercentage) * 10, 100)}%`,
+                          minWidth: '8px'
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-green-600 font-medium">Carteira Professor</span>
+                      <span className={`font-bold ${metrics.teacher.profitPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>{metrics.teacher.profitPercentage.toFixed(2)}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-4">
+                      <div 
+                        className={`h-4 rounded-full ${metrics.teacher.profitPercentage >= 0 ? 'bg-green-600' : 'bg-red-500'}`}
+                        style={{ 
+                          width: `${Math.min(Math.abs(metrics.teacher.profitPercentage) * 10, 100)}%`,
+                          minWidth: '8px'
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-gray-200">
+                    <div className="text-center">
+                      <span className={`text-lg font-bold ${
+                        metrics.my.profitPercentage >= metrics.teacher.profitPercentage ? 'text-green-600' : 'text-red-600'
+                      }`}>
+                        {metrics.my.profitPercentage >= metrics.teacher.profitPercentage ? '+' : ''}
+                        {(metrics.my.profitPercentage - metrics.teacher.profitPercentage).toFixed(2)}%
+                      </span>
+                      <div className="text-sm text-gray-600">Diferença</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Comparação de Valor Investido */}
+              <div className="bg-white rounded-lg p-6 border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">💰 Valores Comparativos</h3>
+                <div className="space-y-4">
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-blue-600 font-medium">Meu Investimento</span>
+                      <span className="font-bold text-blue-600">
+                        R$ {metrics.my.totalInvested.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-4">
+                      <div 
+                        className="bg-blue-600 h-4 rounded-full"
+                        style={{ 
+                          width: `${Math.max(metrics.my.totalInvested, metrics.teacher.totalInvested) === metrics.my.totalInvested ? 100 : (metrics.my.totalInvested / Math.max(metrics.my.totalInvested, metrics.teacher.totalInvested)) * 100}%`,
+                          minWidth: '8px'
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-green-600 font-medium">Investimento Professor</span>
+                      <span className="font-bold text-green-600">
+                        R$ {metrics.teacher.totalInvested.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-200 rounded-full h-4">
+                      <div 
+                        className="bg-green-600 h-4 rounded-full"
+                        style={{ 
+                          width: `${Math.max(metrics.my.totalInvested, metrics.teacher.totalInvested) === metrics.teacher.totalInvested ? 100 : (metrics.teacher.totalInvested / Math.max(metrics.my.totalInvested, metrics.teacher.totalInvested)) * 100}%`,
+                          minWidth: '8px'
+                        }}
+                      ></div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 border-t border-gray-200">
+                    <div className="text-center">
+                      <span className="text-lg font-bold text-gray-700">
+                        R$ {Math.abs(metrics.my.totalInvested - metrics.teacher.totalInvested).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </span>
+                      <div className="text-sm text-gray-600">
+                        {metrics.my.totalInvested > metrics.teacher.totalInvested ? 'Você investiu mais' : 'Professor investiu mais'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Comparação de Alocação por Gráfico */}
+            <div className="bg-white rounded-lg p-6 border border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4 text-center">🎯 Comparação de Alocação</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                {/* Ações */}
+                <div>
+                  <h4 className="font-medium text-gray-700 mb-3">Alocação em Ações</h4>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-blue-600 text-sm">Minha Alocação</span>
+                        <span className="font-semibold text-blue-600">{metrics.my.acoesPercentage.toFixed(1)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-3">
+                        <div 
+                          className="bg-blue-600 h-3 rounded-full"
+                          style={{ width: `${metrics.my.acoesPercentage}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-green-600 text-sm">Professor</span>
+                        <span className="font-semibold text-green-600">{metrics.teacher.acoesPercentage.toFixed(1)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-3">
+                        <div 
+                          className="bg-green-600 h-3 rounded-full"
+                          style={{ width: `${metrics.teacher.acoesPercentage}%` }}
+                        ></div>
+                      </div>
+                    </div>
+
+                    <div className="text-center pt-2">
+                      <span className={`font-medium ${
+                        Math.abs(metrics.my.acoesPercentage - metrics.teacher.acoesPercentage) > 10 ? 'text-orange-600' : 'text-gray-600'
+                      }`}>
+                        Diferença: {(metrics.my.acoesPercentage - metrics.teacher.acoesPercentage).toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* FIIs */}
+                <div>
+                  <h4 className="font-medium text-gray-700 mb-3">Alocação em FIIs</h4>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-blue-600 text-sm">Minha Alocação</span>
+                        <span className="font-semibold text-blue-600">{metrics.my.fiisPercentage.toFixed(1)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-3">
+                        <div 
+                          className="bg-blue-600 h-3 rounded-full"
+                          style={{ width: `${metrics.my.fiisPercentage}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                    
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-green-600 text-sm">Professor</span>
+                        <span className="font-semibold text-green-600">{metrics.teacher.fiisPercentage.toFixed(1)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-3">
+                        <div 
+                          className="bg-green-600 h-3 rounded-full"
+                          style={{ width: `${metrics.teacher.fiisPercentage}%` }}
+                        ></div>
+                      </div>
+                    </div>
+
+                    <div className="text-center pt-2">
+                      <span className={`font-medium ${
+                        Math.abs(metrics.my.fiisPercentage - metrics.teacher.fiisPercentage) > 10 ? 'text-orange-600' : 'text-gray-600'
+                      }`}>
+                        Diferença: {(metrics.my.fiisPercentage - metrics.teacher.fiisPercentage).toFixed(1)}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Insights e Recomendações */}
+            <div className="bg-yellow-50 rounded-lg p-6 border border-yellow-200">
+              <h3 className="text-lg font-semibold text-yellow-900 mb-4">💡 Insights e Análises</h3>
+              <div className="space-y-3 text-sm">
+                {metrics.my.profitPercentage > metrics.teacher.profitPercentage ? (
+                  <div className="flex items-start gap-2">
+                    <span className="text-green-600">✅</span>
+                    <span>Sua carteira está performando {(metrics.my.profitPercentage - metrics.teacher.profitPercentage).toFixed(2)}% melhor que a do professor!</span>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2">
+                    <span className="text-yellow-600">⚠️</span>
+                    <span>A carteira do professor está {(metrics.teacher.profitPercentage - metrics.my.profitPercentage).toFixed(2)}% à frente da sua.</span>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -984,17 +1642,19 @@ const PortfolioTracker = () => {
               {purchaseType === 'professor' ? 'Adicionar Compra do Professor' : 'Registrar Minha Compra'}
             </h3>
             <div className="mb-4">
-              <p className="text-gray-700 mb-2"><strong>{selectedAsset.ticker}</strong> - {selectedAsset.name}</p>
+              <p className="text-gray-700 mb-2">
+                <strong>{selectedAsset?.ticker || 'N/A'}</strong> - {selectedAsset?.name || 'N/A'}
+              </p>
               {purchaseType === 'professor' ? (
                 <div className="text-sm text-gray-600 space-y-1">
-                  <p>Meta atual: <strong>{selectedAsset.targetQty}</strong> cotas</p>
-                  <p>Preço médio atual do professor: <strong>R$ {selectedAsset.teacherPrice.toFixed(2)}</strong></p>
-                  <p>Quantidade atual do professor: <strong>{selectedAsset.teacherQty || selectedAsset.targetQty}</strong> cotas</p>
+                  <p>Meta atual: <strong>{selectedAsset?.targetQty || 0}</strong> cotas</p>
+                  <p>Preço médio atual do professor: <strong>R$ {selectedAsset?.teacherPrice?.toFixed(2) || '0.00'}</strong></p>
+                  <p>Quantidade atual do professor: <strong>{selectedAsset?.teacherQty || selectedAsset?.targetQty || 0}</strong> cotas</p>
                 </div>
               ) : (
                 <div className="text-sm text-gray-600 space-y-1">
-                  <p>Faltam: <strong>{selectedAsset.targetQty - selectedAsset.currentQty}</strong> cotas</p>
-                  <p>Minha quantidade atual: <strong>{selectedAsset.currentQty}</strong> cotas</p>
+                  <p>Faltam: <strong>{Math.max(0, (selectedAsset?.targetQty || 0) - (selectedAsset?.currentQty || 0))}</strong> cotas</p>
+                  <p>Minha quantidade atual: <strong>{selectedAsset?.currentQty || 0}</strong> cotas</p>
                 </div>
               )}
             </div>
@@ -1066,11 +1726,11 @@ const PortfolioTracker = () => {
                 </p>
                 {purchaseType === 'professor' && (
                   <div className="text-sm text-gray-600">
-                    <p>Nova meta: <strong>{selectedAsset.targetQty + parseInt(purchaseQty)}</strong> cotas</p>
+                    <p>Nova meta: <strong>{(selectedAsset?.targetQty || 0) + parseInt(purchaseQty || 0)}</strong> cotas</p>
                     <p>Novo preço médio do professor: <strong>R$ {
-                      (((selectedAsset.teacherPrice * (selectedAsset.teacherQty || selectedAsset.targetQty)) + 
-                        (parseFloat(purchasePrice) * parseInt(purchaseQty))) / 
-                        ((selectedAsset.teacherQty || selectedAsset.targetQty) + parseInt(purchaseQty))).toFixed(2)
+                      ((((selectedAsset?.teacherPrice || 0) * ((selectedAsset?.teacherQty || 0) || (selectedAsset?.targetQty || 0))) + 
+                        (parseFloat(purchasePrice || 0) * parseInt(purchaseQty || 0))) / 
+                        (((selectedAsset?.teacherQty || 0) || (selectedAsset?.targetQty || 0)) + parseInt(purchaseQty || 0))).toFixed(2)
                     }</strong></p>
                   </div>
                 )}
@@ -1106,8 +1766,8 @@ const PortfolioTracker = () => {
           <div className="bg-white rounded-lg p-6 max-w-md w-full">
             <h3 className="text-xl font-bold mb-4">Editar Meu Preço Médio</h3>
             <div className="mb-4">
-              <p className="text-gray-700 mb-2"><strong>{selectedAsset.ticker}</strong> - {selectedAsset.name}</p>
-              <p className="text-sm text-gray-600">Preço do Professor: <strong>R$ {selectedAsset.teacherPrice.toFixed(2)}</strong></p>
+              <p className="text-gray-700 mb-2"><strong>{selectedAsset?.ticker || 'N/A'}</strong> - {selectedAsset?.name || 'N/A'}</p>
+              <p className="text-sm text-gray-600">Preço do Professor: <strong>R$ {selectedAsset?.teacherPrice?.toFixed(2) || '0.00'}</strong></p>
             </div>
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-700 mb-2">Meu Preço Médio (R$)</label>
@@ -1269,7 +1929,7 @@ const PortfolioTracker = () => {
           <div className="bg-white rounded-lg p-6 max-w-md w-full">
             <h3 className="text-xl font-bold mb-4">Editar Cotação Atual</h3>
             <p className="text-gray-600 mb-4">
-              <strong>{selectedAsset.ticker}</strong> - {selectedAsset.name}
+              <strong>{selectedAsset?.ticker || 'N/A'}</strong> - {selectedAsset?.name || 'N/A'}
             </p>
             <div className="mb-4">
               <label className="block text-sm font-medium text-gray-700 mb-2">Nova Cotação Atual (R$)</label>
@@ -1282,7 +1942,7 @@ const PortfolioTracker = () => {
                 placeholder="87.50" 
                 autoFocus
               />
-              <p className="text-xs text-gray-500 mt-1">Preço atual: R$ {selectedAsset.currentPrice.toFixed(2)}</p>
+              <p className="text-xs text-gray-500 mt-1">Preço atual: R$ {selectedAsset?.currentPrice?.toFixed(2) || '0.00'}</p>
             </div>
             <div className="flex gap-3">
               <button 
@@ -1303,6 +1963,229 @@ const PortfolioTracker = () => {
               </button>
             </div>
           </div>
+        </div>
+        )}
+
+        {/* Nova Aba: Proporção de Compra por Ativo */}
+        {activeTab === 'proportion' && (
+          <div className="space-y-6">
+            <div className="text-center">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">🎯 Proporção de Compra por Ativo</h2>
+              <p className="text-gray-600">Calcule automaticamente quantas ações comprar mantendo a mesma proporção do professor</p>
+            </div>
+
+            {/* Valor Disponível e Configurações */}
+            <div className="bg-blue-50 rounded-lg p-6 border border-blue-200">
+              <h3 className="text-lg font-semibold text-blue-900 mb-4">💰 Configurações</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Valor Total Disponível para Investir (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={availableAmount}
+                    onChange={(e) => setAvailableAmount(parseFloat(e.target.value) || 0)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder="Ex: 10000.00"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Método de Arredondamento
+                  </label>
+                  <select
+                    value={roundingMethod}
+                    onChange={(e) => setRoundingMethod(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="normal">Arredondamento Normal</option>
+                    <option value="up">Sempre para Cima</option>
+                    <option value="down">Sempre para Baixo</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+          {/* Tabela de Compras do Professor */}
+          <div className="bg-white rounded-lg p-6 border border-gray-200">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">📋 Compras do Professor</h3>
+              <button
+                onClick={addProportionAsset}
+                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 flex items-center gap-2"
+              >
+                <Plus size={16} />
+                Adicionar Ativo
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b border-gray-200">
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Ativo</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Qtde Professor</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Preço Unitário (R$)</th>
+                    <th className="text-left py-3 px-4 font-semibold text-gray-700">Valor Total (R$)</th>
+                    <th className="text-center py-3 px-4 font-semibold text-gray-700">Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {proportionAssets.map((asset) => (
+                    <tr key={asset.id} className="border-b border-gray-100">
+                      <td className="py-3 px-4">
+                        <input
+                          type="text"
+                          value={asset.ticker}
+                          onChange={(e) => updateProportionAsset(asset.id, 'ticker', e.target.value.toUpperCase())}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-center font-medium"
+                          placeholder="Ex: PETR4"
+                        />
+                      </td>
+                      <td className="py-3 px-4">
+                        <input
+                          type="number"
+                          min="0"
+                          value={asset.qtyProfessor || ''}
+                          onChange={(e) => updateProportionAsset(asset.id, 'qtyProfessor', parseFloat(e.target.value) || 0)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-center"
+                          placeholder="0"
+                        />
+                      </td>
+                      <td className="py-3 px-4">
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={asset.unitPrice || ''}
+                          onChange={(e) => updateProportionAsset(asset.id, 'unitPrice', parseFloat(e.target.value) || 0)}
+                          className="w-full px-2 py-1 border border-gray-300 rounded text-center"
+                          placeholder="0.00"
+                        />
+                      </td>
+                      <td className="py-3 px-4 text-center font-semibold">
+                        R$ {(asset.qtyProfessor * asset.unitPrice).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <button
+                          onClick={() => removeProportionAsset(asset.id)}
+                          disabled={proportionAssets.length <= 1}
+                          className="text-red-600 hover:text-red-800 disabled:text-gray-300 disabled:cursor-not-allowed"
+                          title="Remover ativo"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-gray-300 font-semibold">
+                    <td colSpan="3" className="py-3 px-4 text-right">Total Investido pelo Professor:</td>
+                    <td className="py-3 px-4 text-center text-green-600 font-bold">
+                      R$ {totalProfessorInvestment.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+
+            {/* Resumo dos Cálculos */}
+            {availableAmount > 0 && totalProfessorInvestment > 0 && (
+              <div className="bg-white rounded-lg p-6 border border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4 text-center">📊 Resumo dos Cálculos</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-center">
+                  <div>
+                    <div className="text-2xl font-bold text-green-600">
+                      R$ {totalProfessorInvestment.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </div>
+                    <div className="text-sm text-gray-600">Total do Professor</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-blue-600">
+                      {proportionFactor.toFixed(4)}x
+                    </div>
+                    <div className="text-sm text-gray-600">Fator de Proporção</div>
+                  </div>
+                  <div>
+                    <div className="text-2xl font-bold text-purple-600">
+                      R$ {availableAmount.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                    </div>
+                    <div className="text-sm text-gray-600">Meu Valor Disponível</div>
+                  </div>
+                </div>
+              </div>
+            )}          {/* Resultados da Proporção */}
+          {proportionResults.length > 0 && proportionResults.some(r => r.ticker) && (
+            <div className="bg-white rounded-lg p-6 border border-gray-200">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">🎯 Resultado da Proporção</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="text-left py-3 px-4 font-semibold text-gray-700">Ativo</th>
+                      <th className="text-center py-3 px-4 font-semibold text-gray-700">Qtde Professor</th>
+                      <th className="text-center py-3 px-4 font-semibold text-gray-700">Preço (R$)</th>
+                      <th className="text-center py-3 px-4 font-semibold text-gray-700">Valor Professor</th>
+                      <th className="text-center py-3 px-4 font-semibold text-blue-700">Qtde Usuário</th>
+                      <th className="text-center py-3 px-4 font-semibold text-blue-700">Valor Usuário</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {proportionResults.filter(result => result.ticker).map((result) => (
+                      <tr key={result.id} className="border-b border-gray-100">
+                        <td className="py-3 px-4 font-medium">{result.ticker}</td>
+                        <td className="py-3 px-4 text-center">{result.qtyProfessor}</td>
+                        <td className="py-3 px-4 text-center">R$ {result.unitPrice.toFixed(2)}</td>
+                        <td className="py-3 px-4 text-center text-green-600 font-semibold">
+                          R$ {result.professorValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </td>
+                        <td className="py-3 px-4 text-center text-blue-600 font-bold text-lg">
+                          {result.userQty}
+                        </td>
+                        <td className="py-3 px-4 text-center text-blue-600 font-semibold">
+                          R$ {result.userValue.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-gray-300 font-bold">
+                      <td colSpan="3" className="py-3 px-4 text-right">TOTAIS:</td>
+                      <td className="py-3 px-4 text-center text-green-600">
+                        R$ {totalProfessorInvestment.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </td>
+                      <td className="py-3 px-4 text-center">-</td>
+                      <td className="py-3 px-4 text-center text-blue-600">
+                        R$ {totalUserInvestment.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+
+              {/* Diferença entre valor disponível e valor calculado */}
+              {Math.abs(totalUserInvestment - availableAmount) > 1 && (
+                <div className="mt-4 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <span className="text-yellow-600">⚠️</span>
+                    <span className="font-medium text-yellow-800">
+                      Diferença entre valor disponível e calculado: 
+                      <span className={`ml-2 font-bold ${totalUserInvestment > availableAmount ? 'text-red-600' : 'text-green-600'}`}>
+                        R$ {Math.abs(totalUserInvestment - availableAmount).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                        {totalUserInvestment > availableAmount ? ' (falta)' : ' (sobra)'}
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
